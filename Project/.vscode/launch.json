@@ -1,0 +1,13 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "C/C++ Runner: Debug Session",
+      "type": "lldb",
+      "request": "launch",
+      "args": [],
+      "cwd": "/Users/dingtianxingjian/Library/Mobile Documents/com~apple~CloudDocs/UIUC_fall2023/Paralled Programming/ECE408/Project",
+      "program": "/Users/dingtianxingjian/Library/Mobile Documents/com~apple~CloudDocs/UIUC_fall2023/Paralled Programming/ECE408/Project/build/Debug/outDebug"
+    }
+  ]
+}

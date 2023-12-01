@@ -24,7 +24,11 @@ __global__ void conv_forward_kernel(float *output, const float *input, const flo
 
     const int H_out = (H - K)/S + 1;
     const int W_out = (W - K)/S + 1;
+    const int TILE_WIDTH = 16;
 
+    // Shared memory tiles
+    __shared__ float tile_input[TILE_WIDTH][TILE_WIDTH];
+    __shared__ float tile_mask[K][K];
     // We have some nice #defs for you below to simplify indexing. Feel free to use them, or create your own.
     // An example use of these macros:
     // float a = in_4d(0,0,0,0)
@@ -34,25 +38,47 @@ __global__ void conv_forward_kernel(float *output, const float *input, const flo
     #define in_4d(i3, i2, i1, i0) input[(i3) * (C * H * W) + (i2) * (H * W) + (i1) * (W) + i0]
     #define mask_4d(i3, i2, i1, i0) mask[(i3) * (C * K * K) + (i2) * (K * K) + (i1) * (K) + i0]
 
-    // Insert your GPU convolution kernel code here
-    int w_out = threadIdx.x + blockIdx.x * blockDim.x;
-    int h_out = threadIdx.y + blockIdx.y * blockDim.y;
-    int m = threadIdx.z + blockIdx.z * blockDim.z;
+     // Thread indices
+    int tx = threadIdx.x;
+    int ty = threadIdx.y;
 
-    if (w_out < W_out && h_out < H_out && m < M) {
-        for (int b = 0; b < B; ++b) {
-            float value = 0.0f;
-            for (int c = 0; c < C; ++c) {
-                for (int p = 0; p < K; ++p) {
-                    for (int q = 0; q < K; ++q) {
-                        int h_in = h_out * S + p;
-                        int w_in = w_out * S + q;
-                        value += in_4d(b, c, h_in, w_in) * mask_4d(m, c, p, q);
+    int row_o = blockIdx.y * TILE_WIDTH + ty;
+    int col_o = blockIdx.x * TILE_WIDTH + tx;
+
+    int row_i = row_o - K / 2;
+    int col_i = col_o - K / 2;
+
+    // Initialize output value for each thread
+    float output_val = 0.0f;
+
+    // Loop over tiles
+    for (int m = 0; m < M; m++) {
+        for (int c = 0; c < C; c++) {
+            // Load input tile into shared memory
+            if ((row_i >= 0) && (row_i < H) && (col_i >= 0) && (col_i < W))
+                tile_input[ty][tx] = in_4d(0, c, row_i, col_i);
+            else
+                tile_input[ty][tx] = 0.0f;
+
+            // Load mask tile into shared memory
+            if (ty < K && tx < K)
+                tile_mask[ty][tx] = mask_4d(m, c, ty, tx);
+
+            __syncthreads();
+
+            // Perform convolution on the tiles
+            if (ty < TILE_WIDTH && tx < TILE_WIDTH) {
+                for (int i = 0; i < K; ++i) {
+                    for (int j = 0; j < K; ++j) {
+                        output_val += tile_mask[i][j] * tile_input[ty + i][tx + j];
                     }
                 }
             }
-            out_4d(b, m, h_out, w_out) = value;
+
+            __syncthreads();
         }
+        if (row_o < H_out && col_o < W_out)
+            out_4d(0, m, row_o, col_o) += output_val;
     }
 
 
